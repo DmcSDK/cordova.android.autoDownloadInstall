@@ -1,6 +1,10 @@
 # cordova-plugin-downinstall
 Download automatic installation APK 
 
+```
+ cordova plugin add https://github.com/DmcSDK/cordova.android.autoDownloadInstall.git
+ 
+```
 
 
 ## Example
