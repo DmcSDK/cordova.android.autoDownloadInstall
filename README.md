@@ -18,3 +18,9 @@ index.js code:
                               alert("permission refused");
                             }
                         });
+                        
+    document.addEventListener("DownInstall.onDownLoadEvent", function onCallBack(data) {
+            //根据data显示你的下载进度条  show your progress ui by data
+            console.log(data.progress);
+            console.log(data.size);
+        }, false);
