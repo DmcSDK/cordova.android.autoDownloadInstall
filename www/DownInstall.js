@@ -6,7 +6,7 @@ exports.autoDInstallAPK = function(arg0, success, error) {
 
 exports.onDownLoadEvent = function (data) {
     data = JSON.parse(JSON.stringify(data));
-    cordova.fireDocumentEvent('window.UHF.onInventoryLoopTagEvent', data);
+    cordova.fireDocumentEvent('window.DownInstall.onDownLoadEvent', data);
 };
 
 exports.canDownloadState = function (arg0, success, error) {
