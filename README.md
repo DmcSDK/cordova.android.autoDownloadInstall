@@ -18,7 +18,7 @@ index.js code:
                         function(ok) {
                         },
                         function(error) {
-                           if("permission refused"==error)}{
+                           if("permission refused"==error){
                               alert("permission refused");
                             }
                         });
