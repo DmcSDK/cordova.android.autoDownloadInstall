@@ -1,7 +1,7 @@
 var exec = require('cordova/exec');
 
 exports.autoDInstallAPK = function(arg0, success, error) {
-    exec(success, error, "DownInstall", "autoDInstallAPK", arg0);
+    exec(success, error, "InstallApk", "autoDInstallAPK", arg0);
 };
 
 exports.onDownLoadEvent = function (data) {
@@ -10,5 +10,9 @@ exports.onDownLoadEvent = function (data) {
 };
 
 exports.canDownloadState = function (arg0, success, error) {
-    exec(success, error, "DownInstall", "canDownloadState", arg0);
+    exec(success, error, "InstallApk", "canDownloadState", arg0);
+};
+
+exports.downloadState = function (arg0, success, error) {
+    exec(success, error, "InstallApk", "downloadState", arg0);
 };

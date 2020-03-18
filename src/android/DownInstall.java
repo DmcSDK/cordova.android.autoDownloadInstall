@@ -1,8 +1,10 @@
 package com.dmc.installAPK;
 
 import android.Manifest;
+import android.app.ActivityManager;
 import android.app.DownloadManager;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -10,9 +12,12 @@ import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Environment;
 import android.support.v4.content.FileProvider;
 import android.util.Log;
+import android.widget.Toast;
+
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.PluginResult;
@@ -21,6 +26,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.util.List;
 
 /**
  * Created by Dmc
@@ -35,7 +41,10 @@ public class DownInstall extends CordovaPlugin{
     private CallbackContext myCallbackContext;
 
     private static DownInstall instance;
-
+    DownloadManager manager;
+    long downloadId=0;
+    BroadcastReceiver onComplete;
+    File apkFile;
     public DownInstall() {
         instance = this;
     }
@@ -48,7 +57,7 @@ public class DownInstall extends CordovaPlugin{
          * appVersion
          */
         if (action.equals("autoDInstallAPK")) {
-
+            Toast.makeText(cordova.getActivity(),"downloadId:"+downloadId,Toast.LENGTH_LONG).show();
             for( int i = 0; i < permissionArray.length - 1; i++)
             {
                 if (!cordova.hasPermission(permissionArray[i]))
@@ -64,13 +73,33 @@ public class DownInstall extends CordovaPlugin{
              }else{
                 callbackContext.success("false");
              }
+        }else if(action.equals("installAPK")){
+            for( int i = 0; i < permissionArray.length - 1; i++)
+            {
+                if (!cordova.hasPermission(permissionArray[i]))
+                {
+                    cordova.requestPermission(this, i, permissionArray[i]);
+                }
+            }
+            start();
+            return  true;
+        }else if(action.equals("downloadState")){
+            JSONObject jsonObject=new JSONObject();
+            try {
+                jsonObject.put("downloadId",downloadId);
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+            myCallbackContext.success(jsonObject);
+            return  true;
         }
         return false;
     }
 
     void start(){
         try {
-            final File apkFile=createFile( args.getString(0));
+
+            apkFile=createFile( args.getString(0)+""+System.currentTimeMillis());
             //get url of app on server
             String url = args.getString(1);
             //set downloadmanager
@@ -82,17 +111,28 @@ public class DownInstall extends CordovaPlugin{
             request.setDestinationUri(Uri.fromFile(apkFile));
 
             // get download service and enqueue file
-            final DownloadManager manager = (DownloadManager) cordova.getActivity().getSystemService(Context.DOWNLOAD_SERVICE);
-            final long downloadId = manager.enqueue(request);
+            manager = (DownloadManager) cordova.getActivity().getSystemService(Context.DOWNLOAD_SERVICE);
+            if(downloadId!=-1){//防重复下载
+                manager.remove(downloadId);
+            }
+            if(null!=onComplete){//防重复广播
+                cordova.getActivity().unregisterReceiver(onComplete);
+            }
+            downloadId = manager.enqueue(request);
 
             //set BroadcastReceiver to install app when .apk is downloaded
-            BroadcastReceiver onComplete = new BroadcastReceiver() {
+            onComplete = new BroadcastReceiver() {
                 public void onReceive(Context ctxt, Intent intent) {
-                    installApk(apkFile);
-                    cordova.getActivity().unregisterReceiver(this);
-                    cordova.getActivity().finish();
+                    Bundle bundle = intent.getExtras();
+                    long doId = bundle.getLong(DownloadManager.EXTRA_DOWNLOAD_ID);
+                    if(downloadId==doId&&isAppOnForeground(cordova.getActivity())) {
+                        installApk(apkFile);
+                        cordova.getActivity().unregisterReceiver(this);
+                        cordova.getActivity().finish();
+                    }
                 }
             };
+
             //register receiver for when .apk download is compete
             cordova.getActivity().registerReceiver(onComplete, new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE));
             getProgress(downloadId,manager);
@@ -100,6 +140,38 @@ public class DownInstall extends CordovaPlugin{
             e.printStackTrace();
         }
     }
+
+    public boolean isAppOnForeground(Context context) {
+        ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+        boolean isOnForground = false;
+        try {
+            List<ActivityManager.RunningAppProcessInfo> runnings = am.getRunningAppProcesses();
+            for (ActivityManager.RunningAppProcessInfo running : runnings) {
+                if (running.processName.equals(context.getPackageName())) {
+                    if (running.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+                            || running.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE) {
+                        //前台显示...
+                        Log.e("my", "前台显示");
+                        isOnForground = true;
+                    } else {
+                        //后台显示...
+                        Log.e("my", "后台显示");
+                        isOnForground = false;
+                    }
+                    break;
+                }
+            }
+            String currentPackageName = "";
+            if (am.getRunningTasks(1).size() > 0) {
+                ComponentName cn = am.getRunningTasks(1).get(0).topActivity;
+                currentPackageName = cn.getPackageName();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return isOnForground;
+    }
+
 
     void installApk(File apkFile){
         Intent intent = new Intent(Intent.ACTION_VIEW);
@@ -144,9 +216,11 @@ public class DownInstall extends CordovaPlugin{
                     if (cursor.moveToFirst()) {
                         int bytes_downloaded = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
                         int bytes_total = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
-                        if (cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)) == DownloadManager.STATUS_SUCCESSFUL) {
+                        int status=cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS));
+                        if (status == DownloadManager.STATUS_SUCCESSFUL || status==DownloadManager.STATUS_FAILED ) {
                             downloading = false;
                         }
+
                         int dl_progress = (int) ((bytes_downloaded * 100l) / bytes_total);
                         JSONObject jsonObject=new JSONObject();
                         try {
@@ -164,6 +238,41 @@ public class DownInstall extends CordovaPlugin{
                                 instance.webView.loadUrl("javascript:" + js);
                             }
                         });
+                        cursor.close();
+                    }
+                }
+            }
+        }).start();
+    }
+
+    void getProgress2(final long downloadId,final DownloadManager dm){
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                boolean downloading = true;
+                while (downloading) {
+                    DownloadManager.Query query = new DownloadManager.Query();
+                    query.setFilterById(downloadId);
+                    Cursor cursor = dm.query(query);
+                    if (cursor.moveToFirst()) {
+                        int bytes_downloaded = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
+                        int bytes_total = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
+                        int status=cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS));
+                        if (status == DownloadManager.STATUS_SUCCESSFUL || status==DownloadManager.STATUS_FAILED ) {
+                            downloading = false;
+                        }
+
+                        int dl_progress = (int) ((bytes_downloaded * 100l) / bytes_total);
+                        JSONObject jsonObject=new JSONObject();
+                        try {
+                            jsonObject.put("progress",dl_progress);
+                            jsonObject.put("size",bytes_total);
+                        } catch (JSONException e) {
+                            e.printStackTrace();
+                        }
+                        PluginResult progressResult = new PluginResult(PluginResult.Status.OK, jsonObject);
+                        progressResult.setKeepCallback(true);
+                        myCallbackContext.sendPluginResult(progressResult);
                         cursor.close();
                     }
                 }
