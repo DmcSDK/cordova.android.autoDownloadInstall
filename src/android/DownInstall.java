@@ -57,7 +57,7 @@ public class DownInstall extends CordovaPlugin{
          * appVersion
          */
         if (action.equals("autoDInstallAPK")) {
-            Toast.makeText(cordova.getActivity(),"downloadId:"+downloadId,Toast.LENGTH_LONG).show();
+            //Toast.makeText(cordova.getActivity(),"downloadId:"+downloadId,Toast.LENGTH_LONG).show();
             for( int i = 0; i < permissionArray.length - 1; i++)
             {
                 if (!cordova.hasPermission(permissionArray[i]))
