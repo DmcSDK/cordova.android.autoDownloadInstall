@@ -16,3 +16,7 @@ exports.canDownloadState = function (arg0, success, error) {
 exports.downloadState = function (arg0, success, error) {
     exec(success, error, "InstallApk", "downloadState", arg0);
 };
+
+exports.installAPK = function (arg0, success, error) {
+    exec(success, error, "InstallApk", "installAPK", arg0);
+};

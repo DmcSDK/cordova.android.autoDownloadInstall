@@ -16,6 +16,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.support.v4.content.FileProvider;
 import android.util.Log;
+import android.view.WindowManager;
 import android.widget.Toast;
 
 import org.apache.cordova.CallbackContext;
@@ -81,7 +82,8 @@ public class DownInstall extends CordovaPlugin{
                     cordova.requestPermission(this, i, permissionArray[i]);
                 }
             }
-            start();
+            File file = new File( (String)args.get(0));
+            installApk(file,(String) args.get(1));
             return  true;
         }else if(action.equals("downloadState")){
             JSONObject jsonObject=new JSONObject();
@@ -98,7 +100,6 @@ public class DownInstall extends CordovaPlugin{
 
     void start(){
         try {
-
             apkFile=createFile( args.getString(0)+""+System.currentTimeMillis());
             //get url of app on server
             String url = args.getString(1);
@@ -126,7 +127,7 @@ public class DownInstall extends CordovaPlugin{
                     Bundle bundle = intent.getExtras();
                     long doId = bundle.getLong(DownloadManager.EXTRA_DOWNLOAD_ID);
                     if(downloadId==doId&&isAppOnForeground(cordova.getActivity())) {
-                        installApk(apkFile);
+                        installApk(apkFile,".dmcInstall");
                         cordova.getActivity().unregisterReceiver(this);
                         cordova.getActivity().finish();
                     }
@@ -136,6 +137,13 @@ public class DownInstall extends CordovaPlugin{
             //register receiver for when .apk download is compete
             cordova.getActivity().registerReceiver(onComplete, new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE));
             getProgress(downloadId,manager);
+            cordova.getActivity().runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    cordova.getActivity().getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                }
+            });
+
         } catch (JSONException e) {
             e.printStackTrace();
         }
@@ -173,12 +181,12 @@ public class DownInstall extends CordovaPlugin{
     }
 
 
-    void installApk(File apkFile){
+    void installApk(File apkFile,String fileProviderName){
         Intent intent = new Intent(Intent.ACTION_VIEW);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             intent.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            Uri contentUri = FileProvider.getUriForFile(cordova.getActivity(),  cordova.getActivity().getApplication().getPackageName() + ".dmcInstall", apkFile);
+            Uri contentUri = FileProvider.getUriForFile(cordova.getActivity(),  cordova.getActivity().getApplication().getPackageName() + ""+fileProviderName, apkFile);
             intent.setDataAndType(contentUri, "application/vnd.android.package-archive");
         } else {
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -231,48 +239,15 @@ public class DownInstall extends CordovaPlugin{
                         }
                         String format = "window.DownInstall.onDownLoadEvent(%s);";
                         final String js = String.format(format,jsonObject.toString());
-
+                        PluginResult result=new PluginResult(PluginResult.Status.OK,jsonObject);
+                        result.setKeepCallback(true);
+                        myCallbackContext.sendPluginResult(result);
                         instance.cordova.getActivity().runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
                                 instance.webView.loadUrl("javascript:" + js);
                             }
                         });
-                        cursor.close();
-                    }
-                }
-            }
-        }).start();
-    }
-
-    void getProgress2(final long downloadId,final DownloadManager dm){
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                boolean downloading = true;
-                while (downloading) {
-                    DownloadManager.Query query = new DownloadManager.Query();
-                    query.setFilterById(downloadId);
-                    Cursor cursor = dm.query(query);
-                    if (cursor.moveToFirst()) {
-                        int bytes_downloaded = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
-                        int bytes_total = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
-                        int status=cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS));
-                        if (status == DownloadManager.STATUS_SUCCESSFUL || status==DownloadManager.STATUS_FAILED ) {
-                            downloading = false;
-                        }
-
-                        int dl_progress = (int) ((bytes_downloaded * 100l) / bytes_total);
-                        JSONObject jsonObject=new JSONObject();
-                        try {
-                            jsonObject.put("progress",dl_progress);
-                            jsonObject.put("size",bytes_total);
-                        } catch (JSONException e) {
-                            e.printStackTrace();
-                        }
-                        PluginResult progressResult = new PluginResult(PluginResult.Status.OK, jsonObject);
-                        progressResult.setKeepCallback(true);
-                        myCallbackContext.sendPluginResult(progressResult);
                         cursor.close();
                     }
                 }
